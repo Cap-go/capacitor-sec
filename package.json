@@ -1,5 +1,5 @@
 {
-  "name": "@capgo/capacitor-sec",
+  "name": "@capgo/capgo-sec",
   "version": "1.0.4",
   "description": "Security scanner for Capacitor apps - detect vulnerabilities, hardcoded secrets, and security misconfigurations",
   "main": "dist/index.js",
@@ -30,7 +30,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Cap-go/capacitor-sec"
+    "url": "https://github.com/Cap-go/capgo-sec"
   },
   "homepage": "https://capgo.app/security-scanner/",
   "engines": {
