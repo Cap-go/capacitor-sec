@@ -28,6 +28,22 @@ export function formatCliReport(result: ScanResult): string {
   lines.push(`Project: ${result.projectPath}`);
   lines.push(`Scanned: ${result.filesScanned} files in ${result.duration}ms`);
   lines.push(`Time: ${result.timestamp}`);
+  if (result.scanContext) {
+    lines.push('');
+    lines.push(`${BOLD}Scan Context${RESET}`);
+    lines.push(`${'─'.repeat(60)}`);
+    const used = result.scanContext.capacitorConfigUsed ? ` (used: ${result.scanContext.capacitorConfigUsed})` : '';
+    lines.push(`Capacitor config: ${formatPathList(result.scanContext.capacitorConfigFiles)}${used}`);
+    if (result.scanContext.platformPaths?.android) {
+      lines.push(`Android path:     ${formatConfiguredResolved(result.scanContext.platformPaths.android)}`);
+    }
+    if (result.scanContext.platformPaths?.ios) {
+      lines.push(`iOS path:         ${formatConfiguredResolved(result.scanContext.platformPaths.ios)}`);
+    }
+    lines.push(`Android manifest: ${formatPathList(result.scanContext.androidManifestFiles)}`);
+    lines.push(`Android netsec:  ${formatPathList(result.scanContext.androidNetworkSecurityConfigFiles)}`);
+    lines.push(`iOS Info.plist:  ${formatPathList(result.scanContext.iosInfoPlistFiles)}`);
+  }
   lines.push('');
 
   // Severity breakdown
@@ -82,6 +98,18 @@ export function formatCliReport(result: ScanResult): string {
   lines.push('');
 
   return lines.join('\n');
+}
+
+function formatPathList(paths: string[]): string {
+  if (!paths || paths.length === 0) return 'not found';
+  if (paths.length <= 2) return paths.join(', ');
+  return `${paths.slice(0, 2).join(', ')} (+${paths.length - 2} more)`;
+}
+
+function formatConfiguredResolved(v: { configured?: string; resolved?: string }): string {
+  const c = v.configured ?? 'n/a';
+  const r = v.resolved ?? 'n/a';
+  return `${c} -> ${r}`;
 }
 
 function formatFinding(finding: Finding): string {

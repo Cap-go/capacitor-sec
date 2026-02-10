@@ -1,6 +1,9 @@
 import fg from 'fast-glob';
+import path from 'node:path';
+import { parse } from '@babel/parser';
 import { allRules, ruleCount } from '../rules/index.js';
-import type { Rule, Finding, ScanResult, ScanOptions, RuleCategory, Severity } from '../types.js';
+import type { Rule, Finding, ScanResult, ScanOptions, RuleCategory, Severity, CapacitorConfig } from '../types.js';
+import type * as t from '@babel/types';
 
 const DEFAULT_EXCLUDE = [
   '**/node_modules/**',
@@ -52,8 +55,11 @@ export class SecurityScanner {
     const startTime = Date.now();
     const findings: Finding[] = [];
 
-    // Get all files to scan
-    const files = await this.getFiles();
+    const configDetails = await this.getCapacitorConfigDetails();
+
+    // Get all files to scan (include native projects referenced from capacitor.config)
+    const files = await this.getFiles(configDetails);
+    const scanContext = this.buildScanContext(files, configDetails);
 
     // Process each file
     for (const file of files) {
@@ -68,12 +74,53 @@ export class SecurityScanner {
       timestamp: new Date().toISOString(),
       duration,
       filesScanned: files.length,
+      scanContext,
       findings: this.sortFindings(findings),
       summary: this.generateSummary(findings)
     };
   }
 
-  private async getFiles(): Promise<string[]> {
+  private buildScanContext(
+    files: string[],
+    configDetails: {
+      configFiles: string[];
+      configUsed?: string;
+      platformPaths?: {
+        android?: { configured?: string; resolved?: string };
+        ios?: { configured?: string; resolved?: string };
+      };
+    }
+  ) {
+    const norm = (p: string) => p.replace(/\\/g, '/');
+    const normalized = files.map(norm);
+
+    const capacitorConfigFiles = configDetails.configFiles.map(norm);
+    const androidManifestFiles = normalized.filter(p =>
+      /\/AndroidManifest\.xml$/i.test(p)
+    );
+    const androidNetworkSecurityConfigFiles = normalized.filter(p =>
+      /\/network_security_config\.xml$/i.test(p)
+    );
+    const iosInfoPlistFiles = normalized.filter(p =>
+      /\/Info\.plist$/i.test(p)
+    );
+
+    return {
+      capacitorConfigFiles,
+      capacitorConfigUsed: configDetails.configUsed ? norm(configDetails.configUsed) : undefined,
+      platformPaths: configDetails.platformPaths,
+      androidManifestFiles,
+      androidNetworkSecurityConfigFiles,
+      iosInfoPlistFiles
+    };
+  }
+
+  private async getFiles(configDetails: {
+    platformPaths?: {
+      android?: { configured?: string; resolved?: string };
+      ios?: { configured?: string; resolved?: string };
+    };
+  }): Promise<string[]> {
     const excludePatterns = [...DEFAULT_EXCLUDE, ...(this.options.exclude || [])];
 
     // Collect all unique file patterns from rules
@@ -96,6 +143,26 @@ export class SecurityScanner {
       patterns.add('**/Info.plist');
     }
 
+    // If capacitor.config specifies custom native project locations, prefer scanning those.
+    // This matters for monorepos where native projects live outside the scanned folder.
+    const androidConfigured = configDetails.platformPaths?.android?.configured;
+    const iosConfigured = configDetails.platformPaths?.ios?.configured;
+
+    if (androidConfigured) {
+      for (const p of Array.from(patterns)) {
+        if (/AndroidManifest\.xml$/i.test(p) || /network_security_config\.xml$/i.test(p)) patterns.delete(p);
+      }
+      patterns.add(`${this.normalizeGlobPrefix(androidConfigured)}/**/AndroidManifest.xml`);
+      patterns.add(`${this.normalizeGlobPrefix(androidConfigured)}/**/network_security_config.xml`);
+    }
+
+    if (iosConfigured) {
+      for (const p of Array.from(patterns)) {
+        if (/Info\.plist$/i.test(p)) patterns.delete(p);
+      }
+      patterns.add(`${this.normalizeGlobPrefix(iosConfigured)}/**/Info.plist`);
+    }
+
     const files = await fg(Array.from(patterns), {
       cwd: this.options.path,
       ignore: excludePatterns,
@@ -111,6 +178,8 @@ export class SecurityScanner {
 
     try {
       const content = await Bun.file(filePath).text();
+      const relPath = this.normalizePath(path.relative(this.options.path, filePath));
+      const absPath = this.normalizePath(filePath);
 
       // Get rules that match this file
       const applicableRules = this.rules.filter(rule => {
@@ -122,7 +191,11 @@ export class SecurityScanner {
             .replace(/\./g, '\\.')
             .replace(/\*\*/g, '.*')
             .replace(/(?<!\.)(\*)/g, '[^/]*');
-          return new RegExp(regexPattern).test(filePath);
+          const rx = new RegExp(regexPattern);
+          // Match against both relative and absolute paths.
+          // Relative paths preserve leading ../ segments for monorepos, which is important when
+          // filePatterns come from capacitor.config android.path / ios.path.
+          return rx.test(relPath) || rx.test(absPath);
         });
       });
 
@@ -163,6 +236,169 @@ export class SecurityScanner {
     }
 
     return findings;
+  }
+
+  private normalizePath(p: string): string {
+    return p.replace(/\\/g, '/');
+  }
+
+  private normalizeGlobPrefix(p: string): string {
+    // fast-glob expects POSIX separators in patterns; keep ../ segments intact.
+    return this.normalizePath(p).replace(/\/+$/, '');
+  }
+
+  private async getCapacitorConfigDetails(): Promise<{
+    configFiles: string[];
+    configUsed?: string;
+    platformPaths?: {
+      android?: { configured?: string; resolved?: string };
+      ios?: { configured?: string; resolved?: string };
+    };
+  }> {
+    const excludePatterns = [...DEFAULT_EXCLUDE, ...(this.options.exclude || [])];
+
+    const configFiles = await fg(['**/capacitor.config.*'], {
+      cwd: this.options.path,
+      ignore: excludePatterns,
+      absolute: true,
+      onlyFiles: true
+    });
+
+    const configUsed = this.pickPreferredCapacitorConfig(configFiles);
+    if (!configUsed) return { configFiles };
+
+    const cfg = await this.parseCapacitorConfig(configUsed);
+    const androidPath = typeof cfg?.android?.path === 'string' ? cfg.android.path : undefined;
+    const iosPath = typeof cfg?.ios?.path === 'string' ? cfg.ios.path : undefined;
+
+    const platformPaths = (androidPath || iosPath) ? {
+      android: androidPath ? { configured: this.normalizeGlobPrefix(androidPath), resolved: path.resolve(this.options.path, androidPath) } : undefined,
+      ios: iosPath ? { configured: this.normalizeGlobPrefix(iosPath), resolved: path.resolve(this.options.path, iosPath) } : undefined
+    } : undefined;
+
+    return { configFiles, configUsed, platformPaths };
+  }
+
+  private pickPreferredCapacitorConfig(files: string[]): string | undefined {
+    if (!files || files.length === 0) return undefined;
+    const byName = (name: string) => files.find(f => this.normalizePath(f).toLowerCase().endsWith(`/${name}`));
+    return (
+      byName('capacitor.config.ts') ??
+      byName('capacitor.config.js') ??
+      byName('capacitor.config.mjs') ??
+      byName('capacitor.config.cjs') ??
+      byName('capacitor.config.json') ??
+      files[0]
+    );
+  }
+
+  private async parseCapacitorConfig(filePath: string): Promise<CapacitorConfig | undefined> {
+    try {
+      const content = await Bun.file(filePath).text();
+      const lower = filePath.toLowerCase();
+
+      if (lower.endsWith('.json')) {
+        return JSON.parse(content) as CapacitorConfig;
+      }
+
+      // For TS/JS configs, parse the module and extract the exported object literal when possible.
+      const ast = parse(content, {
+        sourceType: 'module',
+        plugins: ['typescript', 'jsx']
+      }) as unknown as t.File;
+
+      const env = this.collectTopLevelBindings(ast);
+      const exported = this.findDefaultExport(ast);
+      const value = this.evalConfigExpression(exported, env);
+
+      return (value && typeof value === 'object') ? (value as CapacitorConfig) : undefined;
+    } catch (e) {
+      if (this.options.verbose) console.error(`Failed to parse capacitor config at ${filePath}:`, e);
+      return undefined;
+    }
+  }
+
+  private collectTopLevelBindings(ast: t.File): Record<string, t.Expression> {
+    const env: Record<string, t.Expression> = {};
+    for (const stmt of ast.program.body) {
+      if (stmt.type !== 'VariableDeclaration') continue;
+      for (const decl of stmt.declarations) {
+        if (decl.id.type !== 'Identifier') continue;
+        if (!decl.init) continue;
+        // Only store expressions we can potentially evaluate later.
+        if (decl.init.type.endsWith('Expression') || decl.init.type.endsWith('Literal') || decl.init.type === 'ObjectExpression' || decl.init.type === 'ArrayExpression' || decl.init.type === 'Identifier') {
+          env[decl.id.name] = decl.init as t.Expression;
+        }
+      }
+    }
+    return env;
+  }
+
+  private findDefaultExport(ast: t.File): t.Expression | undefined {
+    for (const stmt of ast.program.body) {
+      if (stmt.type === 'ExportDefaultDeclaration') {
+        const d = stmt.declaration;
+        // Could be an expression or a declaration; we only handle expressions/calls/identifiers.
+        if (d.type === 'Identifier') return d;
+        if (d.type === 'ObjectExpression') return d;
+        if (d.type === 'CallExpression') return d;
+        if (d.type.endsWith('Expression')) return d as unknown as t.Expression;
+      }
+    }
+    return undefined;
+  }
+
+  private evalConfigExpression(
+    expr: t.Expression | undefined,
+    env: Record<string, t.Expression>,
+    depth = 0
+  ): any {
+    if (!expr) return undefined;
+    if (depth > 5) return undefined;
+
+    switch (expr.type) {
+      case 'ObjectExpression': {
+        const out: Record<string, any> = {};
+        for (const prop of expr.properties) {
+          if (prop.type !== 'ObjectProperty') continue;
+          const key = this.objectKeyToString(prop.key);
+          if (!key) continue;
+          out[key] = this.evalConfigExpression(prop.value as t.Expression, env, depth + 1);
+        }
+        return out;
+      }
+      case 'ArrayExpression':
+        return expr.elements.map(el => (el && el.type !== 'SpreadElement') ? this.evalConfigExpression(el as t.Expression, env, depth + 1) : undefined);
+      case 'StringLiteral':
+        return expr.value;
+      case 'BooleanLiteral':
+        return expr.value;
+      case 'NumericLiteral':
+        return expr.value;
+      case 'NullLiteral':
+        return null;
+      case 'Identifier': {
+        const bound = env[expr.name];
+        if (!bound) return undefined;
+        return this.evalConfigExpression(bound, env, depth + 1);
+      }
+      case 'CallExpression': {
+        // Handle defineConfig({ ... }) and similar wrappers.
+        const arg0 = expr.arguments[0];
+        if (arg0 && arg0.type !== 'SpreadElement' && (arg0.type === 'ObjectExpression' || arg0.type === 'Identifier')) {
+          return this.evalConfigExpression(arg0 as t.Expression, env, depth + 1);
+        }
+        return undefined;
+      }
+      default:
+        return undefined;
+    }
+  }
+
+  private objectKeyToString(key: t.ObjectProperty['key']): string | undefined {
+    if (key.type === 'Identifier') return key.name;
+    if (key.type === 'StringLiteral') return key.value;
+    return undefined;
   }
 
   private sortFindings(findings: Finding[]): Finding[] {

@@ -90,13 +90,15 @@ export const networkRules: Rule[] = [
     description: 'Detects cleartext traffic enabled in Capacitor configuration',
     severity: 'critical',
     category: 'network',
-    filePatterns: ['**/capacitor.config.ts', '**/capacitor.config.js', '**/capacitor.config.json'],
+    // Support any capacitor config extension (ts/js/json/mjs/cjs, etc).
+    filePatterns: ['**/capacitor.config.*'],
     check: (content: string, filePath: string): Finding[] => {
       const findings: Finding[] = [];
       const lines = content.split('\n');
 
       // Check for cleartext: true in server config
-      const cleartextPattern = /cleartext\s*:\s*true/i;
+      // Works for TS/JS (`cleartext: true`) and JSON (`"cleartext": true`)
+      const cleartextPattern = /\bcleartext\b["']?\s*:\s*true/i;
 
       if (cleartextPattern.test(content)) {
         const match = content.match(cleartextPattern);

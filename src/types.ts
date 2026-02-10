@@ -47,6 +47,17 @@ export interface ScanResult {
   timestamp: string;
   duration: number;
   filesScanned: number;
+  scanContext?: {
+    capacitorConfigFiles: string[];
+    capacitorConfigUsed?: string;
+    platformPaths?: {
+      android?: { configured?: string; resolved?: string };
+      ios?: { configured?: string; resolved?: string };
+    };
+    androidManifestFiles: string[];
+    androidNetworkSecurityConfigFiles: string[];
+    iosInfoPlistFiles: string[];
+  };
   findings: Finding[];
   summary: {
     total: number;
@@ -77,12 +88,14 @@ export interface CapacitorConfig {
   webDir?: string;
   plugins?: Record<string, any>;
   android?: {
+    path?: string;
     allowMixedContent?: boolean;
     captureInput?: boolean;
     webContentsDebuggingEnabled?: boolean;
     loggingBehavior?: string;
   };
   ios?: {
+    path?: string;
     allowsLinkPreview?: boolean;
     scrollEnabled?: boolean;
     webContentsDebuggingEnabled?: boolean;

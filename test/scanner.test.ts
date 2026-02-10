@@ -1,7 +1,8 @@
 import { describe, expect, test, beforeAll, afterAll } from 'bun:test';
 import { SecurityScanner } from '../src/scanners/engine';
-import { mkdir, rm } from 'fs/promises';
+import { mkdir, rm, mkdtemp } from 'fs/promises';
 import { join } from 'path';
+import { tmpdir } from 'os';
 
 const TEST_DIR = '/tmp/capsec-test-project';
 
@@ -288,5 +289,74 @@ export async function saveCredentials(password: string) {
   test('getRuleCount should return correct count', () => {
     const count = SecurityScanner.getRuleCount();
     expect(count).toBeGreaterThan(60);
+  });
+
+  test('should scan native projects using capacitor config paths (monorepo)', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'capsec-monorepo-'));
+    const uiDir = join(root, 'apps', 'ui');
+    const androidDir = join(root, 'native', 'android');
+    const iosDir = join(root, 'native', 'ios', 'App');
+
+    await mkdir(join(uiDir, 'src'), { recursive: true });
+    await mkdir(join(androidDir, 'app', 'src', 'main'), { recursive: true });
+    await mkdir(iosDir, { recursive: true });
+
+    // Point to native projects outside the UI folder.
+    await Bun.write(
+      join(uiDir, 'capacitor.config.ts'),
+      `
+export default {
+  appId: 'com.example.monorepo',
+  appName: 'Monorepo Test',
+  android: { path: '../../native/android' },
+  ios: { path: '../../native/ios/App' },
+  server: { cleartext: true }
+};
+`
+    );
+
+    await Bun.write(
+      join(androidDir, 'app', 'src', 'main', 'AndroidManifest.xml'),
+      `
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+  <application android:usesCleartextTraffic="true" android:debuggable="true" />
+</manifest>
+`
+    );
+
+    await Bun.write(
+      join(iosDir, 'Info.plist'),
+      `
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN">
+<plist version="1.0">
+<dict>
+  <key>NSAppTransportSecurity</key>
+  <dict>
+    <key>NSAllowsArbitraryLoads</key>
+    <true />
+  </dict>
+</dict>
+</plist>
+`
+    );
+
+    const scanner = new SecurityScanner({ path: uiDir });
+    const result = await scanner.scan();
+
+    // It should discover and scan files outside uiDir via android.path / ios.path.
+    expect(result.filesScanned).toBeGreaterThan(0);
+    expect(result.scanContext?.capacitorConfigUsed).toContain('capacitor.config.ts');
+    expect(result.scanContext?.androidManifestFiles.some(p => p.includes('/native/android/'))).toBe(true);
+    expect(result.scanContext?.iosInfoPlistFiles.some(p => p.includes('/native/ios/'))).toBe(true);
+
+    // And it should flag the expected misconfigurations.
+    const ids = new Set(result.findings.map(f => f.ruleId));
+    expect(ids.has('AND001')).toBe(true);
+    expect(ids.has('AND002')).toBe(true);
+    expect(ids.has('IOS001')).toBe(true);
+    expect(ids.has('NET003')).toBe(true);
+
+    await rm(root, { recursive: true, force: true });
   });
 });

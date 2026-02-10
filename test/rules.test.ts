@@ -98,6 +98,21 @@ describe('Security Rules', () => {
     expect(findings.length).toBe(0);
   });
 
+  test('network rules should detect capacitor cleartext in JSON config', () => {
+    const rule = networkRules.find(r => r.id === 'NET003');
+    expect(rule).toBeDefined();
+
+    const testJson = `{
+      "server": {
+        "cleartext": true
+      }
+    }`;
+    const findings = rule!.check!(testJson, 'capacitor.config.json');
+
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings[0].severity).toBe('critical');
+  });
+
   test('capacitor rules should detect WebView debug mode', () => {
     const rule = capacitorRules.find(r => r.id === 'CAP001');
     expect(rule).toBeDefined();
