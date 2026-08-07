@@ -1,4 +1,5 @@
 import fg from 'fast-glob';
+import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { parse } from '@babel/parser';
 import { allRules, ruleCount } from '../rules/index.js';
@@ -177,7 +178,7 @@ export class SecurityScanner {
     const findings: Finding[] = [];
 
     try {
-      const content = await Bun.file(filePath).text();
+      const content = readFileSync(filePath, 'utf8');
       const relPath = this.normalizePath(path.relative(this.options.path, filePath));
       const absPath = this.normalizePath(filePath);
 
@@ -294,7 +295,7 @@ export class SecurityScanner {
 
   private async parseCapacitorConfig(filePath: string): Promise<CapacitorConfig | undefined> {
     try {
-      const content = await Bun.file(filePath).text();
+      const content = readFileSync(filePath, 'utf8');
       const lower = filePath.toLowerCase();
 
       if (lower.endsWith('.json')) {

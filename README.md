@@ -29,11 +29,14 @@ Zero-config security scanner for **Capacitor** and **Ionic** apps. Detect vulner
 ## Quick Start
 
 ```bash
-# Run directly with bunx (no installation needed)
-bunx capsec scan
+# Run directly with npx (no installation needed)
+npx @capgo/capgo-sec scan
+
+# Or with bunx
+bunx @capgo/capgo-sec scan
 
 # Or install globally
-bun add -g capsec
+bun add -g @capgo/capgo-sec
 capsec scan
 ```
 
@@ -128,20 +131,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Setup Bun
-        uses: oven-sh/setup-bun@v1
-
       - name: Run Security Scan
-        run: bunx capsec scan --ci
+        run: npx @capgo/capgo-sec scan --ci
 ```
 
 ### GitLab CI
 
 ```yaml
 security-scan:
-  image: oven/bun:latest
+  image: node:24
   script:
-    - bunx capsec scan --ci
+    - npx @capgo/capgo-sec scan --ci
   only:
     - merge_requests
     - main
@@ -172,7 +172,7 @@ capsec init
 ## Programmatic Usage
 
 ```typescript
-import { SecurityScanner } from 'capsec';
+import { SecurityScanner } from '@capgo/capgo-sec';
 
 const scanner = new SecurityScanner({
   path: './my-app',

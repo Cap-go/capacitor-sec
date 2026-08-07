@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import { writeFileSync } from 'node:fs';
 import { Command } from 'commander';
 import ora from 'ora';
 import chalk from 'chalk';
@@ -75,7 +76,7 @@ program
 
       // Write to file or stdout
       if (options.outputFile) {
-        await Bun.write(options.outputFile, output);
+        writeFileSync(options.outputFile, output);
         console.log(chalk.green(`\n✓ Report saved to ${options.outputFile}`));
       } else {
         console.log(output);
@@ -171,7 +172,7 @@ program
 }`;
 
     const configPath = `${process.cwd()}/capsec.config.json`;
-    await Bun.write(configPath, configContent);
+    writeFileSync(configPath, configContent);
     console.log(chalk.green(`✓ Created ${configPath}`));
   });
 
