@@ -323,7 +323,7 @@ export const iosRules: Rule[] = [
     },
     remediation: 'Implement screenshot protection for sensitive UI screens.'
   },
-  {
+{
     id: 'IOS009',
     name: 'iOS File Sharing Exposes App Documents',
     description: 'Detects UIFileSharingEnabled or LSSupportsOpeningDocumentsInPlace which expose Documents via Finder/Files',
@@ -333,6 +333,8 @@ export const iosRules: Rule[] = [
     check: (content: string, filePath: string): Finding[] => {
       const findings: Finding[] = [];
       const lines = content.split('\n');
+      // Ignore commented-out plist entries
+      const active = content.replace(/<!--[\s\S]*?-->/g, '');
 
       const patterns = [
         {
@@ -350,10 +352,17 @@ export const iosRules: Rule[] = [
       ];
 
       for (const { pattern, message } of patterns) {
-        if (pattern.test(content)) {
-          const match = content.match(pattern);
+        if (pattern.test(active)) {
+          const match = active.match(pattern);
           if (!match) continue;
-          const lineNum = content.substring(0, content.indexOf(match[0])).split('\n').length;
+          // Map to original line when possible
+          const keyMatch = match[0].match(/<key>([^<]+)<\/key>/);
+          const keyName = keyMatch?.[1] ?? match[0];
+          const origIndex = content.indexOf(`<key>${keyName}</key>`);
+          const lineNum =
+            origIndex >= 0
+              ? content.substring(0, origIndex).split('\n').length
+              : content.substring(0, content.indexOf(match[0]) >= 0 ? content.indexOf(match[0]) : 0).split('\n').length;
           findings.push({
             ruleId: 'IOS009',
             ruleName: 'iOS File Sharing Exposes App Documents',

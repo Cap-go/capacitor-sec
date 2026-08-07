@@ -353,4 +353,61 @@ describe('Security Rules', () => {
     expect(findings.length).toBeGreaterThan(0);
   });
 
+  test('authentication rules should detect response_type=code query form without PKCE', () => {
+    const rule = authenticationRules.find(r => r.id === 'AUTH007');
+    expect(rule).toBeDefined();
+
+    const testCode = `window.location = "https://idp.example.com/oauth/authorize?client_id=abc&response_type=code&redirect_uri=app://cb";`;
+    const findings = rule!.check!(testCode, 'login.ts');
+
+    expect(findings.length).toBeGreaterThan(0);
+  });
+
+  test('cryptography rules should not flag RSA-OAEP as PKCS1 v1.5', () => {
+    const rule = cryptographyRules.find(r => r.id === 'CRY001');
+    expect(rule).toBeDefined();
+
+    const testCode = `crypto.privateDecrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING }, buf);`;
+    const findings = rule!.check!(testCode, 'crypto.ts');
+
+    expect(findings.filter(f => /PKCS/.test(f.message)).length).toBe(0);
+  });
+
+  test('cryptography rules should not double-report 3DES as DES', () => {
+    const rule = cryptographyRules.find(r => r.id === 'CRY001');
+    expect(rule).toBeDefined();
+
+    const testCode = `const cipher = crypto.createCipheriv('des-ede3-cbc', key, iv);`;
+    const findings = rule!.check!(testCode, 'crypto.ts');
+    const desFindings = findings.filter(f => f.message.startsWith('DES:'));
+    const triple = findings.filter(f => f.message.startsWith('3DES:'));
+
+    expect(desFindings.length).toBe(0);
+    expect(triple.length).toBeGreaterThan(0);
+  });
+
+  test('capacitor rules should detect HTTP server.url in JSON config', () => {
+    const rule = capacitorRules.find(r => r.id === 'CAP011');
+    expect(rule).toBeDefined();
+
+    const testJson = `{
+      "server": {
+        "url": "http://api.example.com"
+      }
+    }`;
+    const findings = rule!.check!(testJson, 'capacitor.config.json');
+
+    expect(findings.length).toBeGreaterThan(0);
+  });
+
+  test('webview rules should not flag literal loadHTMLString', () => {
+    const rule = webviewRules.find(r => r.id === 'WEB006');
+    expect(rule).toBeDefined();
+
+    const testCode = `webView.loadHTMLString("<html><body>ok</body></html>", baseURL: nil)`;
+    const findings = rule!.check!(testCode, 'Bridge.swift');
+
+    expect(findings.length).toBe(0);
+  });
+
 });

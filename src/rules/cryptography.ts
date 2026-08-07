@@ -15,12 +15,12 @@ export const cryptographyRules: Rule[] = [
       const weakAlgorithms = [
         { pattern: /md5|['"]MD5['"]/gi, name: 'MD5', message: 'MD5 is cryptographically broken' },
         { pattern: /sha1|['"]SHA-?1['"]/gi, name: 'SHA-1', message: 'SHA-1 is deprecated and vulnerable to collision attacks' },
-        { pattern: /des|['"]DES['"]/gi, name: 'DES', message: 'DES uses 56-bit keys, too weak for modern security' },
+        { pattern: /(?<![0-9a-z])des(?!-ede)(?![a-z0-9])|['"]DES['"]/gi, name: 'DES', message: 'DES uses 56-bit keys, too weak for modern security' },
         { pattern: /rc4|['"]RC4['"]/gi, name: 'RC4', message: 'RC4 has known biases and should not be used' },
         { pattern: /blowfish/gi, name: 'Blowfish', message: 'Blowfish has a small block size, prefer AES' },
         { pattern: /(?:3des|triple\s*des|tripledes|des-ede3|DESede)/gi, name: '3DES', message: '3DES is deprecated; use AES-256-GCM' },
         { pattern: /ECB/g, name: 'ECB mode', message: 'ECB mode does not hide data patterns' },
-        { pattern: /RSA(?:ES)?[_-]?PKCS1(?:_?v1_?5)?|PKCS1Padding/gi, name: 'RSA PKCS#1 v1.5', message: 'Prefer RSA-OAEP; PKCS#1 v1.5 encryption is obsolete' }
+        { pattern: /RSA(?:ES)?[_-]?PKCS1(?:_?v1_?5)?(?![_\-]?OAEP)|PKCS1Padding(?!.*OAEP)/gi, name: 'RSA PKCS#1 v1.5', message: 'Prefer RSA-OAEP; PKCS#1 v1.5 encryption is obsolete' }
       ];
 
       for (const { pattern, name, message } of weakAlgorithms) {

@@ -56,7 +56,7 @@ export const networkRules: Rule[] = [
       const apiCallPattern = /(?:fetch|axios|http\.(?:get|post|put|delete))\s*\(\s*['"`][^'"`]*(?:api|auth|login|payment|bank)[^'"`]*['"`]/gi;
 
       // Check if certificate pinning is configured in the file or imports
-      const hasPinning = /(?:certificatePinning|ssl[_-]?pinning|publicKeyPins|TrustKit|NetworkSecurityConfig|pin-set|certificate[_-]?pin)/i.test(content);
+      const hasPinning = /(?:certificatePinning|ssl[_-]?pinning|publicKeyPins|TrustKit|pin-set|<pin\b|certificate[_-]?pin)/i.test(content);
 
       if (!hasPinning) {
         let match;

@@ -7,7 +7,7 @@ export const androidRules: Rule[] = [
     description: 'Detects usesCleartextTraffic enabled in Android manifest',
     severity: 'critical',
     category: 'android',
-    filePatterns: ['**/AndroidManifest.xml', '**/network_security_config.xml'],
+    filePatterns: ['**/AndroidManifest.xml'],
     check: (content: string, filePath: string): Finding[] => {
       const findings: Finding[] = [];
       const lines = content.split('\n');
@@ -29,28 +29,6 @@ export const androidRules: Rule[] = [
               codeSnippet: lines[lineNum - 1]?.trim(),
               remediation: 'Set usesCleartextTraffic="false" and use HTTPS exclusively.',
               references: ['https://developer.android.com/guide/topics/manifest/application-element#usesCleartextTraffic']
-            });
-          }
-        }
-      }
-
-      if (filePath.includes('network_security_config.xml')) {
-        const cleartextDomainPattern = /cleartextTrafficPermitted\s*=\s*["']true["']/i;
-        if (cleartextDomainPattern.test(content)) {
-          const match = content.match(cleartextDomainPattern);
-          if (match) {
-            const lineNum = content.substring(0, content.indexOf(match[0])).split('\n').length;
-            findings.push({
-              ruleId: 'AND001',
-              ruleName: 'Android Cleartext Traffic Allowed',
-              severity: 'critical',
-              category: 'android',
-              message: 'Network security config allows cleartext traffic for specific domains',
-              filePath,
-              line: lineNum,
-              codeSnippet: lines[lineNum - 1]?.trim(),
-              remediation: 'Remove cleartext traffic permissions. Use HTTPS for all domains.',
-              references: ['https://developer.android.com/training/articles/security-config']
             });
           }
         }
@@ -289,30 +267,23 @@ export const androidRules: Rule[] = [
         const context = content.substring(Math.max(0, match.index - 500), match.index + 500);
 
         // Check for security measures (MASVS-PLATFORM-2)
+        // File-URL flags are owned by AND009 to avoid duplicate findings.
         const hasFileAccess = /setAllowFileAccess\s*\(\s*false\s*\)/.test(context);
         const hasContentAccess = /setAllowContentAccess\s*\(\s*false\s*\)/.test(context);
-        const hasUniversalFileAccess = /setAllowUniversalAccessFromFileURLs\s*\(\s*true\s*\)/.test(context);
-        const hasFileAccessFromFile = /setAllowFileAccessFromFileURLs\s*\(\s*true\s*\)/.test(context);
 
-        if (!hasFileAccess || !hasContentAccess || hasUniversalFileAccess || hasFileAccessFromFile) {
+        if (!hasFileAccess || !hasContentAccess) {
           const lineNum = content.substring(0, match.index).split('\n').length;
-          let message = 'WebView has JavaScript enabled without disabling file/content access';
-          if (hasUniversalFileAccess) {
-            message = 'WebView enables setAllowUniversalAccessFromFileURLs(true) — allows cross-origin file access';
-          } else if (hasFileAccessFromFile) {
-            message = 'WebView enables setAllowFileAccessFromFileURLs(true) — risky with untrusted content';
-          }
           findings.push({
             ruleId: 'AND006',
             ruleName: 'WebView JavaScript Enabled Without Safeguards',
             severity: 'high',
             category: 'android',
-            message,
+            message: 'WebView has JavaScript enabled without disabling file/content access',
             filePath,
             line: lineNum,
             codeSnippet: lines[lineNum - 1]?.trim(),
             remediation:
-              'Call setAllowFileAccess(false) and setAllowContentAccess(false). Never enable universal/file URL access with untrusted content.',
+              'Call setAllowFileAccess(false) and setAllowContentAccess(false) when JavaScript is enabled.',
             references: [
               'https://developer.android.com/reference/android/webkit/WebSettings',
               'https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-2/'

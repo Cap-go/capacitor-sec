@@ -219,6 +219,7 @@ console.log(result.summary);
 - **CAP008** - Insecure Plugin Import
 - **CAP009** - Live Update Security
 - **CAP010** - Insecure postMessage Handler
+- **CAP011** - Insecure Capacitor Server URL
 
 ### Android (AND)
 - **AND001** - Android Cleartext Traffic Allowed
@@ -229,6 +230,8 @@ console.log(result.summary);
 - **AND006** - WebView JavaScript Enabled Without Safeguards
 - **AND007** - Insecure WebView addJavascriptInterface
 - **AND008** - Hardcoded Signing Key
+- **AND009** - Insecure WebView File URL Access
+- **AND010** - Network Security Config Cleartext Permitted
 
 ### iOS (IOS)
 - **IOS001** - App Transport Security Disabled
@@ -239,6 +242,7 @@ console.log(result.summary);
 - **IOS006** - Background App Refresh Data Exposure
 - **IOS007** - Missing iOS Jailbreak Detection
 - **IOS008** - Screenshots Not Disabled for Sensitive Screens
+- **IOS009** - iOS File Sharing Exposes App Documents
 
 ### Authentication (AUTH)
 - **AUTH001** - Weak JWT Validation
@@ -247,6 +251,7 @@ console.log(result.summary);
 - **AUTH004** - Missing Session Timeout
 - **AUTH005** - OAuth State Parameter Missing
 - **AUTH006** - Hardcoded Credentials in Auth
+- **AUTH007** - OAuth PKCE Missing
 
 ### WebView (WEB)
 - **WEB001** - WebView JavaScript Injection
@@ -254,6 +259,7 @@ console.log(result.summary);
 - **WEB003** - External Script Loading
 - **WEB004** - Content Security Policy Missing
 - **WEB005** - Target _blank Without noopener
+- **WEB006** - Dynamic WebView Script or HTML Injection
 
 ### Cryptography (CRY)
 - **CRY001** - Weak Cryptographic Algorithm

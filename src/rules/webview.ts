@@ -229,7 +229,7 @@ export const webviewRules: Rule[] = [
     },
     remediation: 'Add rel="noopener noreferrer" to external links.'
   },
-  {
+{
     id: 'WEB006',
     name: 'Dynamic WebView Script or HTML Injection',
     description: 'Detects evaluateJavaScript / loadHTMLString / loadData with dynamic or concatenated content',
@@ -240,30 +240,74 @@ export const webviewRules: Rule[] = [
       const findings: Finding[] = [];
       const lines = content.split('\n');
 
+      const isLiteralArg = (arg: string): boolean => {
+        const trimmed = arg.trim();
+        return (
+          /^["'`]/.test(trimmed) &&
+          !/\$\{/.test(trimmed) &&
+          !/\+\s*[a-zA-Z_$]/.test(trimmed)
+        );
+      };
+
       const patterns = [
         {
-          pattern: /evaluateJavaScript\s*\(\s*(?!['"`])/g,
-          message: 'evaluateJavaScript called with non-literal script — treat as untrusted input'
+          // JS/TS/Swift-ish evaluateJavaScript(nonLiteral
+          pattern: /evaluateJavaScript\s*\(\s*([^)\n]+)/g,
+          message: 'evaluateJavaScript called with non-literal script — treat as untrusted input',
+          platforms: 'all' as const
         },
         {
-          pattern: /loadHTMLString\s*\(/g,
-          message: 'loadHTMLString can execute injected HTML/JS if content is not fully trusted'
+          // Android evaluateJavascript
+          pattern: /evaluateJavascript\s*\(\s*([^,\n]+)/g,
+          message: 'evaluateJavascript called with non-literal script — treat as untrusted input',
+          platforms: 'android' as const
         },
         {
-          pattern: /loadData(?:WithBaseURL)?\s*\(/g,
-          message: 'loadData/loadDataWithBaseURL can execute injected HTML if content is attacker-controlled'
+          // ObjC stringByEvaluatingJavaScriptFromString:
+          pattern: /stringByEvaluatingJavaScriptFromString\s*:\s*([^\]\n;]+)/g,
+          message: 'stringByEvaluatingJavaScriptFromString with dynamic script — injection risk',
+          platforms: 'objc' as const
         },
         {
-          pattern: /\$\{[^}]+\}.*(?:evaluateJavaScript|loadHTMLString)|(?:evaluateJavaScript|loadHTMLString).*\$\{/g,
-          message: 'Template string used to build WebView script/HTML — injection risk'
+          pattern: /loadHTMLString\s*\(\s*([^,\n)]+)/g,
+          message: 'loadHTMLString with non-literal HTML — injection risk if content is not fully trusted',
+          platforms: 'all' as const
+        },
+        {
+          pattern: /loadData(?:WithBaseURL)?\s*\(\s*([^,\n)]+)/g,
+          message: 'loadData/loadDataWithBaseURL with non-literal content — injection risk',
+          platforms: 'all' as const
+        },
+        {
+          // Concatenation / template into evaluateJavaScript
+          pattern: /evaluateJavaScript(?:s)?\s*\(\s*[^)]*(?:\+|`[^`]*\$\{)/g,
+          message: 'Concatenated/template script passed to evaluateJavaScript — injection risk',
+          platforms: 'all' as const,
+          skipLiteralCheck: true
         }
       ];
 
-      for (const { pattern, message } of patterns) {
+      const seen = new Set<string>();
+
+      for (const entry of patterns) {
+        const { pattern, message, skipLiteralCheck } = entry as {
+          pattern: RegExp;
+          message: string;
+          skipLiteralCheck?: boolean;
+        };
         let match;
         const regex = new RegExp(pattern.source, pattern.flags);
         while ((match = regex.exec(content)) !== null) {
+          if (!skipLiteralCheck && match[1] && isLiteralArg(match[1])) {
+            continue;
+          }
           const lineNum = content.substring(0, match.index).split('\n').length;
+          const key = `${lineNum}:${message.slice(0, 24)}`;
+          // Dedupe: one finding per line for this rule
+          const lineKey = `line:${lineNum}`;
+          if (seen.has(lineKey)) continue;
+          seen.add(lineKey);
+
           findings.push({
             ruleId: 'WEB006',
             ruleName: 'Dynamic WebView Script or HTML Injection',

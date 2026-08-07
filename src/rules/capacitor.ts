@@ -363,7 +363,7 @@ export const capacitorRules: Rule[] = [
 
       if (liveUpdatePattern.test(content)) {
         // Check for encryption configuration
-        const hasEncryption = /(?:privateKey|publicKey|encryptionKey|signatureKey|checksum)/i.test(content);
+        const hasEncryption = /(?:privateKey|encryptionKey)/i.test(content);
 
         if (!hasEncryption) {
           const match = content.match(liveUpdatePattern);
@@ -433,40 +433,72 @@ export const capacitorRules: Rule[] = [
     },
     remediation: 'Validate message origin before processing postMessage events.'
   },
-  {
+{
     id: 'CAP011',
     name: 'Insecure Capacitor Server URL',
     description: 'Detects capacitor.config server.url using HTTP or wildcard hosts in production config',
     severity: 'critical',
     category: 'capacitor',
-    filePatterns: ['**/capacitor.config.ts', '**/capacitor.config.js', '**/capacitor.config.json', '**/capacitor.config.mjs'],
+    filePatterns: [
+      '**/capacitor.config.ts',
+      '**/capacitor.config.js',
+      '**/capacitor.config.json',
+      '**/capacitor.config.mjs',
+      '**/capacitor.config.cjs'
+    ],
     check: (content: string, filePath: string): Finding[] => {
       const findings: Finding[] = [];
       const lines = content.split('\n');
 
+      // Match url under a nearby server block (TS/JS/JSON). Optional quotes for JSON keys.
       const patterns = [
         {
-          pattern: /\burl\b\s*:\s*['"]http:\/\/(?!localhost|127\.0\.0\.1)[^'"]+['"]/gi,
+          pattern:
+            /server\s*:\s*\{[\s\S]{0,400}?["']?url["']?\s*:\s*["']http:\/\/(?!localhost(?:[:/?#"']|$)|127\.0\.0\.1(?:[:/?#"']|$))[^"']+["']/gi,
           message: 'server.url uses HTTP — traffic and bridge content can be intercepted',
           severity: 'critical' as const
         },
         {
-          pattern: /\burl\b\s*:\s*['"]https?:\/\/\*[^'"]*['"]/gi,
+          pattern:
+            /["']url["']\s*:\s*["']http:\/\/(?!localhost(?:[:/?#"']|$)|127\.0\.0\.1(?:[:/?#"']|$))[^"']+["']/gi,
+          message: 'server.url uses HTTP — traffic and bridge content can be intercepted',
+          severity: 'critical' as const,
+          requireServerContext: true
+        },
+        {
+          pattern: /server\s*:\s*\{[\s\S]{0,400}?["']?url["']?\s*:\s*["']https?:\/\/\*[^"']*["']/gi,
           message: 'server.url contains a wildcard host',
           severity: 'high' as const
+        },
+        {
+          pattern: /["']url["']\s*:\s*["']https?:\/\/\*[^"']*["']/gi,
+          message: 'server.url contains a wildcard host',
+          severity: 'high' as const,
+          requireServerContext: true
         }
       ];
 
-      for (const { pattern, message, severity } of patterns) {
+      const seen = new Set<number>();
+
+      for (const { pattern, message, severity, requireServerContext } of patterns as Array<{
+        pattern: RegExp;
+        message: string;
+        severity: 'critical' | 'high';
+        requireServerContext?: boolean;
+      }>) {
         let match;
         const regex = new RegExp(pattern.source, pattern.flags);
         while ((match = regex.exec(content)) !== null) {
-          const windowStart = Math.max(0, match.index - 200);
-          const around = content.substring(windowStart, match.index + match[0].length);
-          if (!/server/i.test(around) && !filePath.includes('capacitor.config')) {
-            continue;
+          if (requireServerContext) {
+            const windowStart = Math.max(0, match.index - 120);
+            const around = content.substring(windowStart, match.index);
+            if (!/["']?server["']?\s*:/.test(around)) {
+              continue;
+            }
           }
           const lineNum = content.substring(0, match.index).split('\n').length;
+          if (seen.has(lineNum)) continue;
+          seen.add(lineNum);
           findings.push({
             ruleId: 'CAP011',
             ruleName: 'Insecure Capacitor Server URL',

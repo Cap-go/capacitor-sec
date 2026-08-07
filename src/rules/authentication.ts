@@ -258,10 +258,10 @@ export const authenticationRules: Rule[] = [
     },
     remediation: 'Remove hardcoded credentials and use secure configuration.'
   },
-  {
+{
     id: 'AUTH007',
     name: 'OAuth PKCE Missing',
-    description: 'Detects OAuth2 / OpenID Connect flows without PKCE (required for Capacitor/native apps)',
+    description: 'Detects OAuth2 authorization-code flows without PKCE (required for Capacitor/native apps)',
     severity: 'critical',
     category: 'authentication',
     filePatterns: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
@@ -269,26 +269,56 @@ export const authenticationRules: Rule[] = [
       const findings: Finding[] = [];
       const lines = content.split('\n');
 
-      const oauthFlow =
-        /(?:response_type\s*[:=]\s*['"]code['"]|authorization[_-]?code|oauth2?|OpenID|oidc|Auth\.authorize|signInWithOAuth)/i.test(
-          content
-        ) || /(?:authorize\?|\/oauth\/|\/authorize)/i.test(content);
+      // Flow-shaped indicators only (avoid comments/imports/openid scope alone)
+      const flowPatterns = [
+        /response_type\s*[:=]\s*['"]code['"]/gi,
+        /response_type=code(?:&|["'\s]|$)/gi,
+        /signInWithOAuth\s*\(/gi,
+        /Auth\.authorize\s*\(/gi,
+        /authorization[_-]?code/gi
+      ];
 
-      if (!oauthFlow) {
+      type Hit = { index: number; text: string };
+      const hits: Hit[] = [];
+      for (const pattern of flowPatterns) {
+        const regex = new RegExp(pattern.source, pattern.flags);
+        let match;
+        while ((match = regex.exec(content)) !== null) {
+          hits.push({ index: match.index, text: match[0] });
+        }
+      }
+
+      if (hits.length === 0) {
         return findings;
       }
 
-      const hasPkce = /(?:code_challenge|code_verifier|codeChallenge|codeVerifier|pkce|PKCE)/i.test(
-        content
-      );
+      const seenLines = new Set<number>();
 
-      if (!hasPkce) {
-        const anchor =
-          content.match(/response_type\s*[:=]\s*['"]code['"]/i) ||
-          content.match(/signInWithOAuth|Auth\.authorize|authorization[_-]?code/i) ||
-          content.match(/oauth2?/i);
-        const index = anchor?.index ?? 0;
-        const lineNum = content.substring(0, index).split('\n').length;
+      for (const hit of hits) {
+        // Skip hits on comment-only lines (do not treat https:// as a comment)
+        const lineStart = content.lastIndexOf('\n', hit.index) + 1;
+        const lineEnd = content.indexOf('\n', hit.index);
+        const fullLine = content.substring(lineStart, lineEnd === -1 ? content.length : lineEnd);
+        if (/^\s*\/\//.test(fullLine) || /^\s*\*/.test(fullLine)) {
+          continue;
+        }
+
+        // Look for PKCE evidence near this flow (same function/block window)
+        const windowStart = Math.max(0, hit.index - 400);
+        const windowEnd = Math.min(content.length, hit.index + 600);
+        const local = content.substring(windowStart, windowEnd);
+        const hasPkce =
+          /(?:code_challenge|code_verifier|codeChallenge|codeVerifier)\b/.test(local) ||
+          /\bpkce\b/i.test(local);
+
+        if (hasPkce) {
+          continue;
+        }
+
+        const lineNum = content.substring(0, hit.index).split('\n').length;
+        if (seenLines.has(lineNum)) continue;
+        seenLines.add(lineNum);
+
         findings.push({
           ruleId: 'AUTH007',
           ruleName: 'OAuth PKCE Missing',

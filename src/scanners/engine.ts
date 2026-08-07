@@ -31,6 +31,19 @@ export class SecurityScanner {
     this.rules = this.filterRules(allRules);
   }
 
+
+  private filterFindingsBySeverity(findings: Finding[]): Finding[] {
+    if (!this.options.severity) {
+      return findings;
+    }
+    const severityOrder: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
+    const minIndex = severityOrder.indexOf(this.options.severity);
+    return findings.filter(finding => {
+      const findingIndex = severityOrder.indexOf(finding.severity);
+      return findingIndex !== -1 && findingIndex <= minIndex;
+    });
+  }
+
   private filterRules(rules: Rule[]): Rule[] {
     let filtered = rules;
 
@@ -151,10 +164,24 @@ export class SecurityScanner {
 
     if (androidConfigured) {
       for (const p of Array.from(patterns)) {
-        if (/AndroidManifest\.xml$/i.test(p) || /network_security_config\.xml$/i.test(p)) patterns.delete(p);
+        if (
+          /AndroidManifest\.xml$/i.test(p) ||
+          /network_security_config\.xml$/i.test(p) ||
+          /network-security-config\.xml$/i.test(p) ||
+          /\*\*\/\*\.java$/i.test(p) ||
+          /\*\*\/\*\.kt$/i.test(p) ||
+          /res\/xml\/\*\.xml$/i.test(p)
+        ) {
+          patterns.delete(p);
+        }
       }
-      patterns.add(`${this.normalizeGlobPrefix(androidConfigured)}/**/AndroidManifest.xml`);
-      patterns.add(`${this.normalizeGlobPrefix(androidConfigured)}/**/network_security_config.xml`);
+      const androidRoot = this.normalizeGlobPrefix(androidConfigured);
+      patterns.add(`${androidRoot}/**/AndroidManifest.xml`);
+      patterns.add(`${androidRoot}/**/network_security_config.xml`);
+      patterns.add(`${androidRoot}/**/network-security-config.xml`);
+      patterns.add(`${androidRoot}/**/res/xml/*.xml`);
+      patterns.add(`${androidRoot}/**/*.java`);
+      patterns.add(`${androidRoot}/**/*.kt`);
     }
 
     if (iosConfigured) {
@@ -204,7 +231,7 @@ export class SecurityScanner {
       for (const rule of applicableRules) {
         if (rule.check) {
           const ruleFindings = rule.check(content, filePath);
-          findings.push(...ruleFindings);
+          findings.push(...this.filterFindingsBySeverity(ruleFindings));
         } else if (rule.patterns) {
           // Simple pattern matching
           for (const pattern of rule.patterns) {
