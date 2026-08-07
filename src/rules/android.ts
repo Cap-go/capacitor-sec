@@ -321,8 +321,11 @@ export const androidRules: Rule[] = [
           filePath,
           line: lineNum,
           codeSnippet: lines[lineNum - 1]?.trim(),
-          remediation: 'Ensure minSdkVersion is >= 17 (Android 4.2) or use @JavascriptInterface annotation.',
-          references: ['https://developer.android.com/reference/android/webkit/WebView#addJavascriptInterface']
+          remediation: 'Annotate with @JavascriptInterface, keep minSdkVersion >= 17, expose only required methods, prefer androidx.webkit WebMessageListener.',
+          references: [
+            'https://developer.android.com/reference/android/webkit/WebView#addJavascriptInterface',
+            'https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-2/'
+          ]
         });
       }
 
