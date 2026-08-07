@@ -21,7 +21,7 @@ Zero-config security scanner for **Capacitor** and **Ionic** apps. Detect vulner
 - **🚀 Zero Configuration** - Works out of the box with any Capacitor/Ionic project
 - **🔐 Local Processing** - Your code never leaves your machine
 - **📱 Platform-Specific** - Android and iOS security checks
-- **🔑 Secret Detection** - Detects 30+ types of API keys and secrets
+- **🔑 Secret Detection** - Detects 40+ types of API keys and secrets (OpenAI, Anthropic, GitHub, Stripe, …)
 - **⚡ Fast** - Scans 1000+ files in seconds
 - **📊 Multiple Outputs** - CLI, JSON, and HTML reports
 - **🔄 CI/CD Ready** - GitHub Actions, GitLab CI support
@@ -42,18 +42,18 @@ capsec scan
 
 ## Security Rules
 
-Capsec includes **63+ security rules** across 13 categories:
+Capsec includes **68+ security rules** across 13 categories:
 
 | Category | Rules | Description |
 |----------|-------|-------------|
-| 🔑 Secrets | 2 | API keys, tokens, credentials |
+| 🔑 Secrets | 2 | API keys, tokens, credentials (40+ patterns) |
 | 💾 Storage | 6 | Preferences, localStorage, SQLite |
 | 🌐 Network | 8 | HTTP, SSL/TLS, WebSocket |
-| ⚡ Capacitor | 10 | Config, plugins, native bridge |
-| 🤖 Android | 8 | Manifest, WebView, permissions |
-| 🍎 iOS | 8 | ATS, Keychain, entitlements |
-| 🔐 Authentication | 6 | JWT, OAuth, biometrics |
-| 🖼️ WebView | 5 | XSS, CSP, iframe security |
+| ⚡ Capacitor | 11 | Config, plugins, native bridge |
+| 🤖 Android | 10 | Manifest, WebView, network security |
+| 🍎 iOS | 9 | ATS, Keychain, entitlements, file sharing |
+| 🔐 Authentication | 7 | JWT, OAuth, PKCE, biometrics |
+| 🖼️ WebView | 6 | XSS, CSP, iframe, injection |
 | 🔒 Cryptography | 4 | Algorithms, keys, IV generation |
 | 📝 Logging | 2 | Sensitive data in logs |
 | 🐛 Debug | 3 | Test credentials, dev URLs |

@@ -198,7 +198,7 @@ export const authenticationRules: Rule[] = [
             line: lineNum,
             codeSnippet: lines[lineNum - 1]?.trim(),
             remediation: 'Always include a unique state parameter in OAuth flows and validate it on callback.',
-            references: ['https://tools.ietf.org/html/rfc6749#section-10.12']
+            references: ['https://datatracker.ietf.org/doc/html/rfc6749#section-10.12', 'https://capacitorjs.com/docs/guides/security/']
           });
         }
       }
@@ -257,5 +257,60 @@ export const authenticationRules: Rule[] = [
       return findings;
     },
     remediation: 'Remove hardcoded credentials and use secure configuration.'
+  },
+  {
+    id: 'AUTH007',
+    name: 'OAuth PKCE Missing',
+    description: 'Detects OAuth2 / OpenID Connect flows without PKCE (required for Capacitor/native apps)',
+    severity: 'critical',
+    category: 'authentication',
+    filePatterns: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx'],
+    check: (content: string, filePath: string): Finding[] => {
+      const findings: Finding[] = [];
+      const lines = content.split('\n');
+
+      const oauthFlow =
+        /(?:response_type\s*[:=]\s*['"]code['"]|authorization[_-]?code|oauth2?|OpenID|oidc|Auth\.authorize|signInWithOAuth)/i.test(
+          content
+        ) || /(?:authorize\?|\/oauth\/|\/authorize)/i.test(content);
+
+      if (!oauthFlow) {
+        return findings;
+      }
+
+      const hasPkce = /(?:code_challenge|code_verifier|codeChallenge|codeVerifier|pkce|PKCE)/i.test(
+        content
+      );
+
+      if (!hasPkce) {
+        const anchor =
+          content.match(/response_type\s*[:=]\s*['"]code['"]/i) ||
+          content.match(/signInWithOAuth|Auth\.authorize|authorization[_-]?code/i) ||
+          content.match(/oauth2?/i);
+        const index = anchor?.index ?? 0;
+        const lineNum = content.substring(0, index).split('\n').length;
+        findings.push({
+          ruleId: 'AUTH007',
+          ruleName: 'OAuth PKCE Missing',
+          severity: 'critical',
+          category: 'authentication',
+          message:
+            'OAuth2 authorization-code flow without PKCE — required for Capacitor apps to prevent token interception via custom URL schemes',
+          filePath,
+          line: lineNum,
+          codeSnippet: lines[lineNum - 1]?.trim(),
+          remediation:
+            'Use PKCE (code_verifier + code_challenge) for all OAuth2 authorization-code flows. Prefer Universal Links / App Links over custom schemes.',
+          references: [
+            'https://capacitorjs.com/docs/guides/security/',
+            'https://datatracker.ietf.org/doc/html/rfc7636',
+            'https://datatracker.ietf.org/doc/html/rfc8252'
+          ]
+        });
+      }
+
+      return findings;
+    },
+    remediation: 'Enable PKCE on every OAuth2 authorization-code flow used by the mobile app.'
   }
 ];

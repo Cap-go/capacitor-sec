@@ -1,7 +1,7 @@
 import type { Rule, Finding } from '../types.js';
 
 // API Key and Secret patterns - 30+ patterns
-const SECRET_PATTERNS: Array<{ name: string; pattern: RegExp; severity: 'critical' | 'high' }> = [
+const SECRET_PATTERNS: Array<{ name: string; pattern: RegExp; severity: 'critical' | 'high' | 'medium' }> = [
   // AWS
   { name: 'AWS Access Key ID', pattern: /AKIA[0-9A-Z]{16}/g, severity: 'critical' },
   { name: 'AWS Secret Access Key', pattern: /(?:aws)?_?(?:secret)?_?(?:access)?_?key['"]?\s*[:=]\s*['"][A-Za-z0-9/+=]{40}['"]/gi, severity: 'critical' },
@@ -13,43 +13,52 @@ const SECRET_PATTERNS: Array<{ name: string; pattern: RegExp; severity: 'critica
 
   // Stripe
   { name: 'Stripe Live Secret Key', pattern: /sk_live_[0-9a-zA-Z]{24,}/g, severity: 'critical' },
-  { name: 'Stripe Test Secret Key', pattern: /sk_test_[0-9a-zA-Z]{24,}/g, severity: 'medium' as any },
+  { name: 'Stripe Test Secret Key', pattern: /sk_test_[0-9a-zA-Z]{24,}/g, severity: 'medium' },
   { name: 'Stripe Publishable Key', pattern: /pk_(?:live|test)_[0-9a-zA-Z]{24,}/g, severity: 'high' },
+  { name: 'Stripe Restricted Key', pattern: /rk_(?:live|test)_[0-9a-zA-Z]{24,}/g, severity: 'critical' },
+
+  // OpenAI / Anthropic / Hugging Face
+  { name: 'OpenAI API Key', pattern: /\bsk-(?:proj|svcacct|admin)-(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})T3BlbkFJ(?:[A-Za-z0-9_-]{74}|[A-Za-z0-9_-]{58})\b|\bsk-[a-zA-Z0-9]{20}T3BlbkFJ[a-zA-Z0-9]{20}\b/g, severity: 'critical' },
+  { name: 'Anthropic API Key', pattern: /\bsk-ant-api03-[a-zA-Z0-9_-]{93}AA\b/g, severity: 'critical' },
+  { name: 'Anthropic Admin API Key', pattern: /\bsk-ant-admin01-[a-zA-Z0-9_-]{93}AA\b/g, severity: 'critical' },
+  { name: 'Hugging Face Token', pattern: /\bhf_[A-Za-z0-9]{34,}\b/g, severity: 'critical' },
 
   // GitHub/GitLab
   { name: 'GitHub Token', pattern: /(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{36,}/g, severity: 'critical' },
+  { name: 'GitHub Fine-grained PAT', pattern: /github_pat_[A-Za-z0-9]{22}_[A-Za-z0-9]{59}/g, severity: 'critical' },
   { name: 'GitHub OAuth', pattern: /github.*['"][0-9a-zA-Z]{35,40}['"]/gi, severity: 'critical' },
   { name: 'GitLab Token', pattern: /glpat-[A-Za-z0-9_-]{20,}/g, severity: 'critical' },
 
-  // Slack
+  // Slack / Discord
   { name: 'Slack Token', pattern: /xox[baprs]-[0-9]{10,13}-[0-9]{10,13}[a-zA-Z0-9-]*/g, severity: 'critical' },
   { name: 'Slack Webhook', pattern: /hooks\.slack\.com\/services\/T[A-Z0-9]{8}\/B[A-Z0-9]{8,}\/[A-Za-z0-9]{24}/g, severity: 'high' },
+  { name: 'Discord Bot Token', pattern: /\b[MN][A-Za-z\d]{23,}\.[\w-]{6}\.[\w-]{25,}\b/g, severity: 'critical' },
 
   // Twilio
   { name: 'Twilio API Key', pattern: /SK[0-9a-fA-F]{32}/g, severity: 'high' },
   { name: 'Twilio Account SID', pattern: /AC[0-9a-fA-F]{32}/g, severity: 'high' },
 
-  // SendGrid
+  // SendGrid / Mailgun
   { name: 'SendGrid API Key', pattern: /SG\.[A-Za-z0-9_-]{22}\.[A-Za-z0-9_-]{43}/g, severity: 'critical' },
-
-  // Mailgun
   { name: 'Mailgun API Key', pattern: /key-[0-9a-zA-Z]{32}/g, severity: 'high' },
 
-  // DigitalOcean
+  // DigitalOcean / Heroku / NPM
   { name: 'DigitalOcean Token', pattern: /dop_v1_[a-f0-9]{64}/g, severity: 'critical' },
   { name: 'DigitalOcean OAuth', pattern: /doo_v1_[a-f0-9]{64}/g, severity: 'critical' },
-
-  // Heroku
   { name: 'Heroku API Key', pattern: /heroku.*['"][0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}['"]/gi, severity: 'critical' },
-
-  // NPM
   { name: 'NPM Token', pattern: /npm_[A-Za-z0-9]{36}/g, severity: 'critical' },
 
-  // Supabase
+  // Cloudflare / Postman / Linear
+  { name: 'Cloudflare API Token', pattern: /(?:cloudflare|cf)[_-]?(?:api)?[_-]?(?:token|key)['"]?\s*[:=]\s*['"][A-Za-z0-9_-]{37,}['"]/gi, severity: 'critical' },
+  { name: 'Postman API Key', pattern: /PMAK-[A-Za-z0-9]{24}-[A-Za-z0-9]{34}/g, severity: 'critical' },
+  { name: 'Linear API Key', pattern: /lin_api_[A-Za-z0-9]{40,}/g, severity: 'critical' },
+
+  // Supabase JWT-shaped keys (service role often shipped as JWT)
   { name: 'Supabase Service Key', pattern: /eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9\.[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+/g, severity: 'high' },
 
   // Private Keys
   { name: 'RSA Private Key', pattern: /-----BEGIN RSA PRIVATE KEY-----/g, severity: 'critical' },
+  { name: 'PKCS8 Private Key', pattern: /-----BEGIN PRIVATE KEY-----/g, severity: 'critical' },
   { name: 'SSH Private Key', pattern: /-----BEGIN (?:DSA|EC|OPENSSH) PRIVATE KEY-----/g, severity: 'critical' },
   { name: 'PGP Private Key', pattern: /-----BEGIN PGP PRIVATE KEY BLOCK-----/g, severity: 'critical' },
 
@@ -59,14 +68,14 @@ const SECRET_PATTERNS: Array<{ name: string; pattern: RegExp; severity: 'critica
   { name: 'Generic Token', pattern: /(?:access[_-]?token|auth[_-]?token|bearer)['"]?\s*[:=]\s*['"][A-Za-z0-9_.-]{20,}['"]/gi, severity: 'high' },
 
   // Database URLs
-  { name: 'Database URL with Credentials', pattern: /(?:mongodb|postgres|mysql|redis):\/\/[^:]+:[^@]+@[^/]+/gi, severity: 'critical' },
+  { name: 'Database URL with Credentials', pattern: /(?:mongodb(?:\+srv)?|postgres(?:ql)?|mysql|redis|amqp):\/\/[^:\s]+:[^@\s]+@[^\s/'"]+/gi, severity: 'critical' },
 ];
 
 export const secretsRules: Rule[] = [
   {
     id: 'SEC001',
     name: 'Hardcoded API Keys & Secrets',
-    description: 'Detects hardcoded API keys, tokens, and secrets in source code',
+    description: 'Detects hardcoded API keys, tokens, and secrets in source code (AWS, Stripe, OpenAI, Anthropic, GitHub, Discord, and more)',
     severity: 'critical',
     category: 'secrets',
     filePatterns: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.json', '**/*.env*'],
@@ -107,10 +116,11 @@ export const secretsRules: Rule[] = [
             filePath,
             line: lineNum,
             codeSnippet: lines[lineNum - 1]?.trim().substring(0, 100),
-            remediation: 'Move secrets to environment variables or a secure secrets manager. Never commit secrets to source control.',
+            remediation: 'Move secrets to a secure secrets manager or server-side. Never embed secrets in Capacitor app code (see Capacitor Security guide).',
             references: [
               'https://capacitor-sec.dev/docs/rules/secrets',
-              'https://owasp.org/www-project-mobile-top-10/'
+              'https://owasp.org/www-project-mobile-top-10/',
+              'https://mas.owasp.org/MASVS/'
             ]
           });
         }
@@ -119,7 +129,8 @@ export const secretsRules: Rule[] = [
       return findings;
     },
     remediation: 'Use environment variables or a secure secrets manager. Consider using @capgo/capacitor-social-login for OAuth flows.',
-    references: ['https://owasp.org/www-project-mobile-top-10/']
+    references: ['https://owasp.org/www-project-mobile-top-10/',
+              'https://mas.owasp.org/MASVS/']
   },
   {
     id: 'SEC002',

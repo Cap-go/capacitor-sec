@@ -168,7 +168,7 @@ export const webviewRules: Rule[] = [
             filePath,
             line: 1,
             remediation: 'Add a Content Security Policy meta tag to restrict resource loading.',
-            references: ['https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP']
+            references: ['https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP', 'https://capacitorjs.com/docs/guides/security/']
           });
         } else if (hasUnsafeInline) {
           findings.push({
@@ -228,5 +228,63 @@ export const webviewRules: Rule[] = [
       return findings;
     },
     remediation: 'Add rel="noopener noreferrer" to external links.'
+  },
+  {
+    id: 'WEB006',
+    name: 'Dynamic WebView Script or HTML Injection',
+    description: 'Detects evaluateJavaScript / loadHTMLString / loadData with dynamic or concatenated content',
+    severity: 'high',
+    category: 'webview',
+    filePatterns: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.java', '**/*.kt', '**/*.swift', '**/*.m'],
+    check: (content: string, filePath: string): Finding[] => {
+      const findings: Finding[] = [];
+      const lines = content.split('\n');
+
+      const patterns = [
+        {
+          pattern: /evaluateJavaScript\s*\(\s*(?!['"`])/g,
+          message: 'evaluateJavaScript called with non-literal script — treat as untrusted input'
+        },
+        {
+          pattern: /loadHTMLString\s*\(/g,
+          message: 'loadHTMLString can execute injected HTML/JS if content is not fully trusted'
+        },
+        {
+          pattern: /loadData(?:WithBaseURL)?\s*\(/g,
+          message: 'loadData/loadDataWithBaseURL can execute injected HTML if content is attacker-controlled'
+        },
+        {
+          pattern: /\$\{[^}]+\}.*(?:evaluateJavaScript|loadHTMLString)|(?:evaluateJavaScript|loadHTMLString).*\$\{/g,
+          message: 'Template string used to build WebView script/HTML — injection risk'
+        }
+      ];
+
+      for (const { pattern, message } of patterns) {
+        let match;
+        const regex = new RegExp(pattern.source, pattern.flags);
+        while ((match = regex.exec(content)) !== null) {
+          const lineNum = content.substring(0, match.index).split('\n').length;
+          findings.push({
+            ruleId: 'WEB006',
+            ruleName: 'Dynamic WebView Script or HTML Injection',
+            severity: 'high',
+            category: 'webview',
+            message,
+            filePath,
+            line: lineNum,
+            codeSnippet: lines[lineNum - 1]?.trim(),
+            remediation:
+              'Never pass attacker-controlled data into evaluateJavaScript or loadHTMLString. Validate URLs against an allowlist; prefer safe DOM APIs and strict CSP.',
+            references: [
+              'https://mas.owasp.org/MASTG/best-practices/MASTG-BEST-0034/',
+              'https://capacitorjs.com/docs/guides/security/'
+            ]
+          });
+        }
+      }
+
+      return findings;
+    },
+    remediation: 'Validate and escape all data before injecting into WebView HTML or JavaScript.'
   }
 ];

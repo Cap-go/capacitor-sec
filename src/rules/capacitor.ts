@@ -363,7 +363,7 @@ export const capacitorRules: Rule[] = [
 
       if (liveUpdatePattern.test(content)) {
         // Check for encryption configuration
-        const hasEncryption = /privateKey|encryptionKey|signatureKey/i.test(content);
+        const hasEncryption = /(?:privateKey|publicKey|encryptionKey|signatureKey|checksum)/i.test(content);
 
         if (!hasEncryption) {
           const match = content.match(liveUpdatePattern);
@@ -380,6 +380,7 @@ export const capacitorRules: Rule[] = [
               codeSnippet: lines[lineNum - 1]?.trim(),
               remediation: 'Enable encryption for live updates to prevent tampering. Use Capgo end-to-end encryption.',
               references: [
+                'https://capgo.app/docs/cli/encryption/',
                 'https://capgo.app/docs/plugin/cloud-mode/hybrid-update/',
                 'https://capacitor-sec.dev/docs/rules/live-update'
               ]
@@ -431,5 +432,62 @@ export const capacitorRules: Rule[] = [
       return findings;
     },
     remediation: 'Validate message origin before processing postMessage events.'
+  },
+  {
+    id: 'CAP011',
+    name: 'Insecure Capacitor Server URL',
+    description: 'Detects capacitor.config server.url using HTTP or wildcard hosts in production config',
+    severity: 'critical',
+    category: 'capacitor',
+    filePatterns: ['**/capacitor.config.ts', '**/capacitor.config.js', '**/capacitor.config.json', '**/capacitor.config.mjs'],
+    check: (content: string, filePath: string): Finding[] => {
+      const findings: Finding[] = [];
+      const lines = content.split('\n');
+
+      const patterns = [
+        {
+          pattern: /\burl\b\s*:\s*['"]http:\/\/(?!localhost|127\.0\.0\.1)[^'"]+['"]/gi,
+          message: 'server.url uses HTTP — traffic and bridge content can be intercepted',
+          severity: 'critical' as const
+        },
+        {
+          pattern: /\burl\b\s*:\s*['"]https?:\/\/\*[^'"]*['"]/gi,
+          message: 'server.url contains a wildcard host',
+          severity: 'high' as const
+        }
+      ];
+
+      for (const { pattern, message, severity } of patterns) {
+        let match;
+        const regex = new RegExp(pattern.source, pattern.flags);
+        while ((match = regex.exec(content)) !== null) {
+          const windowStart = Math.max(0, match.index - 200);
+          const around = content.substring(windowStart, match.index + match[0].length);
+          if (!/server/i.test(around) && !filePath.includes('capacitor.config')) {
+            continue;
+          }
+          const lineNum = content.substring(0, match.index).split('\n').length;
+          findings.push({
+            ruleId: 'CAP011',
+            ruleName: 'Insecure Capacitor Server URL',
+            severity,
+            category: 'capacitor',
+            message,
+            filePath,
+            line: lineNum,
+            codeSnippet: lines[lineNum - 1]?.trim(),
+            remediation:
+              'Use HTTPS endpoints only. Remove server.url from production builds unless intentionally loading a remote, pinned HTTPS origin.',
+            references: [
+              'https://capacitorjs.com/docs/config',
+              'https://capacitorjs.com/docs/guides/security/'
+            ]
+          });
+        }
+      }
+
+      return findings;
+    },
+    remediation: 'Serve the app over HTTPS; avoid cleartext remote server.url in production.'
   }
 ];

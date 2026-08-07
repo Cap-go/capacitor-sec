@@ -56,7 +56,7 @@ export const networkRules: Rule[] = [
       const apiCallPattern = /(?:fetch|axios|http\.(?:get|post|put|delete))\s*\(\s*['"`][^'"`]*(?:api|auth|login|payment|bank)[^'"`]*['"`]/gi;
 
       // Check if certificate pinning is configured in the file or imports
-      const hasPinning = /(?:certificatePinning|ssl-pinning|pinned|TrustKit|cert)/i.test(content);
+      const hasPinning = /(?:certificatePinning|ssl[_-]?pinning|publicKeyPins|TrustKit|NetworkSecurityConfig|pin-set|certificate[_-]?pin)/i.test(content);
 
       if (!hasPinning) {
         let match;
@@ -71,10 +71,11 @@ export const networkRules: Rule[] = [
             filePath,
             line: lineNum,
             codeSnippet: lines[lineNum - 1]?.trim(),
-            remediation: 'Implement SSL certificate pinning for sensitive API endpoints using capacitor-ssl-pinning or similar.',
+            remediation: 'Implement SSL/TLS certificate pinning for sensitive API endpoints (native plugin or network security config / TrustKit).',
             references: [
-              'https://github.com/niclas-niclas/capacitor-ssl-pinning',
-              'https://owasp.org/www-community/controls/Certificate_and_Public_Key_Pinning'
+              'https://owasp.org/www-community/controls/Certificate_and_Public_Key_Pinning',
+              'https://capacitorjs.com/docs/guides/security/',
+              'https://mas.owasp.org/MASVS/'
             ]
           });
         }

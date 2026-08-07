@@ -322,5 +322,59 @@ export const iosRules: Rule[] = [
       return findings;
     },
     remediation: 'Implement screenshot protection for sensitive UI screens.'
+  },
+  {
+    id: 'IOS009',
+    name: 'iOS File Sharing Exposes App Documents',
+    description: 'Detects UIFileSharingEnabled or LSSupportsOpeningDocumentsInPlace which expose Documents via Finder/Files',
+    severity: 'medium',
+    category: 'ios',
+    filePatterns: ['**/Info.plist'],
+    check: (content: string, filePath: string): Finding[] => {
+      const findings: Finding[] = [];
+      const lines = content.split('\n');
+
+      const patterns = [
+        {
+          pattern: /<key>UIFileSharingEnabled<\/key>\s*<true\s*\/>/,
+          message: 'UIFileSharingEnabled exposes Documents directory over USB/Finder'
+        },
+        {
+          pattern: /<key>LSSupportsOpeningDocumentsInPlace<\/key>\s*<true\s*\/>/,
+          message: 'LSSupportsOpeningDocumentsInPlace allows external apps to open Documents in place'
+        },
+        {
+          pattern: /<key>UISupportsDocumentBrowser<\/key>\s*<true\s*\/>/,
+          message: 'UISupportsDocumentBrowser broadens document access surface — ensure no secrets in Documents'
+        }
+      ];
+
+      for (const { pattern, message } of patterns) {
+        if (pattern.test(content)) {
+          const match = content.match(pattern);
+          if (!match) continue;
+          const lineNum = content.substring(0, content.indexOf(match[0])).split('\n').length;
+          findings.push({
+            ruleId: 'IOS009',
+            ruleName: 'iOS File Sharing Exposes App Documents',
+            severity: 'medium',
+            category: 'ios',
+            message,
+            filePath,
+            line: lineNum,
+            codeSnippet: lines[lineNum - 1]?.trim(),
+            remediation:
+              'Disable file sharing unless required. Never store tokens, keys, or PII in Documents when sharing is enabled — use Keychain.',
+            references: [
+              'https://developer.apple.com/documentation/uikit/protecting_the_user_s_privacy/about_app_file_management',
+              'https://mas.owasp.org/MASVS/'
+            ]
+          });
+        }
+      }
+
+      return findings;
+    },
+    remediation: 'Turn off UIFileSharingEnabled unless the product requires user document exchange.'
   }
 ];
