@@ -247,4 +247,167 @@ describe('Security Rules', () => {
 
     expect(findings.length).toBeGreaterThan(0);
   });
+
+  test('secrets rules should detect OpenAI API keys', () => {
+    const rule = secretsRules.find(r => r.id === 'SEC001');
+    expect(rule).toBeDefined();
+
+    // Assemble fixture so push protection does not treat it as a live secret
+    const openAiLike = ['sk-', 'abcdefghijklmnopqrst', 'T3BlbkFJ', 'abcdefghijklmnopqrst'].join('');
+    const testCode = `const key = "${openAiLike}";`;
+    const findings = rule!.check!(testCode, 'test.ts');
+
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings[0].severity).toBe('critical');
+  });
+
+  test('authentication rules should detect OAuth without PKCE', () => {
+    const rule = authenticationRules.find(r => r.id === 'AUTH007');
+    expect(rule).toBeDefined();
+
+    const testCode = `
+      const url = 'https://auth.example.com/authorize?client_id=abc&response_type=code';
+      window.location = url;
+    `;
+    const findings = rule!.check!(testCode, 'auth.ts');
+
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings[0].severity).toBe('critical');
+  });
+
+  test('authentication rules should allow OAuth with PKCE', () => {
+    const rule = authenticationRules.find(r => r.id === 'AUTH007');
+    expect(rule).toBeDefined();
+
+    const testCode = `
+      const codeChallenge = await pkceChallenge();
+      const url = 'https://auth.example.com/authorize?client_id=abc&response_type=code&code_challenge=' + codeChallenge;
+    `;
+    const findings = rule!.check!(testCode, 'auth.ts');
+
+    expect(findings.length).toBe(0);
+  });
+
+  test('android rules should detect cleartext in network security config', () => {
+    const rule = androidRules.find(r => r.id === 'AND010');
+    expect(rule).toBeDefined();
+
+    const testXml = `
+      <network-security-config>
+        <base-config cleartextTrafficPermitted="true" />
+      </network-security-config>
+    `;
+    const findings = rule!.check!(testXml, 'res/xml/network_security_config.xml');
+
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings[0].severity).toBe('critical');
+  });
+
+  test('android rules should detect insecure file URL access', () => {
+    const rule = androidRules.find(r => r.id === 'AND009');
+    expect(rule).toBeDefined();
+
+    const testCode = `settings.setAllowUniversalAccessFromFileURLs(true);`;
+    const findings = rule!.check!(testCode, 'MainActivity.java');
+
+    expect(findings.length).toBeGreaterThan(0);
+  });
+
+  test('capacitor rules should detect HTTP server.url', () => {
+    const rule = capacitorRules.find(r => r.id === 'CAP011');
+    expect(rule).toBeDefined();
+
+    const testCode = `
+      const config = {
+        server: {
+          url: 'http://api.example.com'
+        }
+      };
+    `;
+    const findings = rule!.check!(testCode, 'capacitor.config.ts');
+
+    expect(findings.length).toBeGreaterThan(0);
+    expect(findings[0].severity).toBe('critical');
+  });
+
+  test('ios rules should detect UIFileSharingEnabled', () => {
+    const rule = iosRules.find(r => r.id === 'IOS009');
+    expect(rule).toBeDefined();
+
+    const testPlist = `
+      <key>UIFileSharingEnabled</key>
+      <true />
+    `;
+    const findings = rule!.check!(testPlist, 'Info.plist');
+
+    expect(findings.length).toBeGreaterThan(0);
+  });
+
+  test('webview rules should detect loadHTMLString', () => {
+    const rule = webviewRules.find(r => r.id === 'WEB006');
+    expect(rule).toBeDefined();
+
+    const testCode = `webView.loadHTMLString(userHtml, baseURL: nil)`;
+    const findings = rule!.check!(testCode, 'Bridge.swift');
+
+    expect(findings.length).toBeGreaterThan(0);
+  });
+
+  test('authentication rules should detect response_type=code query form without PKCE', () => {
+    const rule = authenticationRules.find(r => r.id === 'AUTH007');
+    expect(rule).toBeDefined();
+
+    const testCode = `window.location = "https://idp.example.com/oauth/authorize?client_id=abc&response_type=code&redirect_uri=app://cb";`;
+    const findings = rule!.check!(testCode, 'login.ts');
+
+    expect(findings.length).toBeGreaterThan(0);
+  });
+
+  test('cryptography rules should not flag RSA-OAEP as PKCS1 v1.5', () => {
+    const rule = cryptographyRules.find(r => r.id === 'CRY001');
+    expect(rule).toBeDefined();
+
+    const testCode = `crypto.privateDecrypt({ key, padding: crypto.constants.RSA_PKCS1_OAEP_PADDING }, buf);`;
+    const findings = rule!.check!(testCode, 'crypto.ts');
+
+    expect(findings.filter(f => /PKCS/.test(f.message)).length).toBe(0);
+  });
+
+  test('cryptography rules should not double-report 3DES as DES', () => {
+    const rule = cryptographyRules.find(r => r.id === 'CRY001');
+    expect(rule).toBeDefined();
+
+    const testCode = `const cipher = crypto.createCipheriv('des-ede3-cbc', key, iv);`;
+    const findings = rule!.check!(testCode, 'crypto.ts');
+    const desFindings = findings.filter(f => f.message.startsWith('DES:'));
+    const triple = findings.filter(f => f.message.startsWith('3DES:'));
+
+    expect(desFindings.length).toBe(0);
+    expect(triple.length).toBeGreaterThan(0);
+  });
+
+  test('capacitor rules should detect HTTP server.url in JSON config', () => {
+    const rule = capacitorRules.find(r => r.id === 'CAP011');
+    expect(rule).toBeDefined();
+
+    const testJson = `{
+      "server": {
+        "url": "http://api.example.com"
+      }
+    }`;
+    const findings = rule!.check!(testJson, 'capacitor.config.json');
+
+    expect(findings.length).toBeGreaterThan(0);
+  });
+
+  test('webview rules should not flag literal loadHTMLString', () => {
+    const rule = webviewRules.find(r => r.id === 'WEB006');
+    expect(rule).toBeDefined();
+
+    const testCode = `webView.loadHTMLString("<html><body>ok</body></html>", baseURL: nil)`;
+    const findings = rule!.check!(testCode, 'Bridge.swift');
+
+    expect(findings.length).toBe(0);
+  });
+
 });

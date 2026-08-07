@@ -7,7 +7,7 @@ export const androidRules: Rule[] = [
     description: 'Detects usesCleartextTraffic enabled in Android manifest',
     severity: 'critical',
     category: 'android',
-    filePatterns: ['**/AndroidManifest.xml', '**/network_security_config.xml'],
+    filePatterns: ['**/AndroidManifest.xml'],
     check: (content: string, filePath: string): Finding[] => {
       const findings: Finding[] = [];
       const lines = content.split('\n');
@@ -29,28 +29,6 @@ export const androidRules: Rule[] = [
               codeSnippet: lines[lineNum - 1]?.trim(),
               remediation: 'Set usesCleartextTraffic="false" and use HTTPS exclusively.',
               references: ['https://developer.android.com/guide/topics/manifest/application-element#usesCleartextTraffic']
-            });
-          }
-        }
-      }
-
-      if (filePath.includes('network_security_config.xml')) {
-        const cleartextDomainPattern = /cleartextTrafficPermitted\s*=\s*["']true["']/i;
-        if (cleartextDomainPattern.test(content)) {
-          const match = content.match(cleartextDomainPattern);
-          if (match) {
-            const lineNum = content.substring(0, content.indexOf(match[0])).split('\n').length;
-            findings.push({
-              ruleId: 'AND001',
-              ruleName: 'Android Cleartext Traffic Allowed',
-              severity: 'critical',
-              category: 'android',
-              message: 'Network security config allows cleartext traffic for specific domains',
-              filePath,
-              line: lineNum,
-              codeSnippet: lines[lineNum - 1]?.trim(),
-              remediation: 'Remove cleartext traffic permissions. Use HTTPS for all domains.',
-              references: ['https://developer.android.com/training/articles/security-config']
             });
           }
         }
@@ -288,7 +266,8 @@ export const androidRules: Rule[] = [
       while ((match = jsEnabledPattern.exec(content)) !== null) {
         const context = content.substring(Math.max(0, match.index - 500), match.index + 500);
 
-        // Check for security measures
+        // Check for security measures (MASVS-PLATFORM-2)
+        // File-URL flags are owned by AND009 to avoid duplicate findings.
         const hasFileAccess = /setAllowFileAccess\s*\(\s*false\s*\)/.test(context);
         const hasContentAccess = /setAllowContentAccess\s*\(\s*false\s*\)/.test(context);
 
@@ -303,8 +282,12 @@ export const androidRules: Rule[] = [
             filePath,
             line: lineNum,
             codeSnippet: lines[lineNum - 1]?.trim(),
-            remediation: 'Disable setAllowFileAccess(false) and setAllowContentAccess(false) when JavaScript is enabled.',
-            references: ['https://developer.android.com/reference/android/webkit/WebSettings']
+            remediation:
+              'Call setAllowFileAccess(false) and setAllowContentAccess(false) when JavaScript is enabled.',
+            references: [
+              'https://developer.android.com/reference/android/webkit/WebSettings',
+              'https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-2/'
+            ]
           });
         }
       }
@@ -334,18 +317,21 @@ export const androidRules: Rule[] = [
           ruleName: 'Insecure WebView addJavascriptInterface',
           severity: 'high',
           category: 'android',
-          message: 'addJavascriptInterface can be exploited for code injection on Android < 4.2',
+          message: 'addJavascriptInterface exposes native methods to WebView JS — minimize surface and prefer WebMessageListener',
           filePath,
           line: lineNum,
           codeSnippet: lines[lineNum - 1]?.trim(),
-          remediation: 'Ensure minSdkVersion is >= 17 (Android 4.2) or use @JavascriptInterface annotation.',
-          references: ['https://developer.android.com/reference/android/webkit/WebView#addJavascriptInterface']
+          remediation: 'Annotate with @JavascriptInterface, keep minSdkVersion >= 17, expose only required methods, prefer androidx.webkit WebMessageListener.',
+          references: [
+            'https://developer.android.com/reference/android/webkit/WebView#addJavascriptInterface',
+            'https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-2/'
+          ]
         });
       }
 
       return findings;
     },
-    remediation: 'Use @JavascriptInterface annotation and ensure minSdkVersion >= 17.'
+    remediation: 'Minimize JS bridge surface; use @JavascriptInterface and prefer WebMessageListener on modern Android.'
   },
   {
     id: 'AND008',
@@ -388,5 +374,100 @@ export const androidRules: Rule[] = [
       return findings;
     },
     remediation: 'Move signing credentials to environment variables or excluded properties files.'
+  },
+{
+    id: 'AND009',
+    name: 'Insecure WebView File URL Access',
+    description: 'Detects WebView settings that allow file:// origin to access other files or universal URLs',
+    severity: 'critical',
+    category: 'android',
+    filePatterns: ['**/*.java', '**/*.kt'],
+    check: (content: string, filePath: string): Finding[] => {
+      const findings: Finding[] = [];
+      const lines = content.split('\n');
+
+      const patterns = [
+        {
+          pattern: /setAllowUniversalAccessFromFileURLs\s*\(\s*true\s*\)/g,
+          message: 'setAllowUniversalAccessFromFileURLs(true) enables same-origin bypass via file://'
+        },
+        {
+          pattern: /setAllowFileAccessFromFileURLs\s*\(\s*true\s*\)/g,
+          message: 'setAllowFileAccessFromFileURLs(true) allows file:// pages to read other local files'
+        }
+      ];
+
+      for (const { pattern, message } of patterns) {
+        let match;
+        const regex = new RegExp(pattern.source, pattern.flags);
+        while ((match = regex.exec(content)) !== null) {
+          const lineNum = content.substring(0, match.index).split('\n').length;
+          findings.push({
+            ruleId: 'AND009',
+            ruleName: 'Insecure WebView File URL Access',
+            severity: 'critical',
+            category: 'android',
+            message,
+            filePath,
+            line: lineNum,
+            codeSnippet: lines[lineNum - 1]?.trim(),
+            remediation:
+              'Keep both flags false. Load local assets via https://localhost or Capacitor WebView defaults, not file:// with broad access.',
+            references: [
+              'https://developer.android.com/reference/android/webkit/WebSettings',
+              'https://mas.owasp.org/MASVS/controls/MASVS-PLATFORM-2/'
+            ]
+          });
+        }
+      }
+
+      return findings;
+    },
+    remediation: 'Disable WebView file URL access flags; avoid loading untrusted content via file://.'
+  },
+  {
+    id: 'AND010',
+    name: 'Network Security Config Cleartext Permitted',
+    description: 'Detects cleartextTrafficPermitted="true" in Android network security config',
+    severity: 'critical',
+    category: 'android',
+    filePatterns: [
+      '**/network_security_config.xml',
+      '**/network-security-config.xml',
+      '**/res/xml/*.xml'
+    ],
+    check: (content: string, filePath: string): Finding[] => {
+      const findings: Finding[] = [];
+      const lines = content.split('\n');
+
+      if (!/cleartextTrafficPermitted|network-security-config|domain-config|base-config/i.test(content)) {
+        return findings;
+      }
+
+      const pattern = /cleartextTrafficPermitted\s*=\s*["']true["']/gi;
+      let match;
+      while ((match = pattern.exec(content)) !== null) {
+        const lineNum = content.substring(0, match.index).split('\n').length;
+        findings.push({
+          ruleId: 'AND010',
+          ruleName: 'Network Security Config Cleartext Permitted',
+          severity: 'critical',
+          category: 'android',
+          message: 'Network security config permits cleartext (HTTP) traffic',
+          filePath,
+          line: lineNum,
+          codeSnippet: lines[lineNum - 1]?.trim(),
+          remediation:
+            'Set cleartextTrafficPermitted="false" and use HTTPS only. Prefer certificate pinning for sensitive APIs.',
+          references: [
+            'https://developer.android.com/privacy-and-security/security-config',
+            'https://mas.owasp.org/MASVS/'
+          ]
+        });
+      }
+
+      return findings;
+    },
+    remediation: 'Disable cleartext in network_security_config.xml for production builds.'
   }
 ];

@@ -363,7 +363,7 @@ export const capacitorRules: Rule[] = [
 
       if (liveUpdatePattern.test(content)) {
         // Check for encryption configuration
-        const hasEncryption = /privateKey|encryptionKey|signatureKey/i.test(content);
+        const hasEncryption = /(?:privateKey|encryptionKey)/i.test(content);
 
         if (!hasEncryption) {
           const match = content.match(liveUpdatePattern);
@@ -380,6 +380,7 @@ export const capacitorRules: Rule[] = [
               codeSnippet: lines[lineNum - 1]?.trim(),
               remediation: 'Enable encryption for live updates to prevent tampering. Use Capgo end-to-end encryption.',
               references: [
+                'https://capgo.app/docs/cli/encryption/',
                 'https://capgo.app/docs/plugin/cloud-mode/hybrid-update/',
                 'https://capacitor-sec.dev/docs/rules/live-update'
               ]
@@ -431,5 +432,94 @@ export const capacitorRules: Rule[] = [
       return findings;
     },
     remediation: 'Validate message origin before processing postMessage events.'
+  },
+{
+    id: 'CAP011',
+    name: 'Insecure Capacitor Server URL',
+    description: 'Detects capacitor.config server.url using HTTP or wildcard hosts in production config',
+    severity: 'critical',
+    category: 'capacitor',
+    filePatterns: [
+      '**/capacitor.config.ts',
+      '**/capacitor.config.js',
+      '**/capacitor.config.json',
+      '**/capacitor.config.mjs',
+      '**/capacitor.config.cjs'
+    ],
+    check: (content: string, filePath: string): Finding[] => {
+      const findings: Finding[] = [];
+      const lines = content.split('\n');
+
+      // Match url under a nearby server block (TS/JS/JSON). Optional quotes for JSON keys.
+      const patterns = [
+        {
+          pattern:
+            /server\s*:\s*\{[\s\S]{0,400}?["']?url["']?\s*:\s*["']http:\/\/(?!localhost(?:[:/?#"']|$)|127\.0\.0\.1(?:[:/?#"']|$))[^"']+["']/gi,
+          message: 'server.url uses HTTP — traffic and bridge content can be intercepted',
+          severity: 'critical' as const
+        },
+        {
+          pattern:
+            /["']url["']\s*:\s*["']http:\/\/(?!localhost(?:[:/?#"']|$)|127\.0\.0\.1(?:[:/?#"']|$))[^"']+["']/gi,
+          message: 'server.url uses HTTP — traffic and bridge content can be intercepted',
+          severity: 'critical' as const,
+          requireServerContext: true
+        },
+        {
+          pattern: /server\s*:\s*\{[\s\S]{0,400}?["']?url["']?\s*:\s*["']https?:\/\/\*[^"']*["']/gi,
+          message: 'server.url contains a wildcard host',
+          severity: 'high' as const
+        },
+        {
+          pattern: /["']url["']\s*:\s*["']https?:\/\/\*[^"']*["']/gi,
+          message: 'server.url contains a wildcard host',
+          severity: 'high' as const,
+          requireServerContext: true
+        }
+      ];
+
+      const seen = new Set<number>();
+
+      for (const { pattern, message, severity, requireServerContext } of patterns as Array<{
+        pattern: RegExp;
+        message: string;
+        severity: 'critical' | 'high';
+        requireServerContext?: boolean;
+      }>) {
+        let match;
+        const regex = new RegExp(pattern.source, pattern.flags);
+        while ((match = regex.exec(content)) !== null) {
+          if (requireServerContext) {
+            const windowStart = Math.max(0, match.index - 120);
+            const around = content.substring(windowStart, match.index);
+            if (!/["']?server["']?\s*:/.test(around)) {
+              continue;
+            }
+          }
+          const lineNum = content.substring(0, match.index).split('\n').length;
+          if (seen.has(lineNum)) continue;
+          seen.add(lineNum);
+          findings.push({
+            ruleId: 'CAP011',
+            ruleName: 'Insecure Capacitor Server URL',
+            severity,
+            category: 'capacitor',
+            message,
+            filePath,
+            line: lineNum,
+            codeSnippet: lines[lineNum - 1]?.trim(),
+            remediation:
+              'Use HTTPS endpoints only. Remove server.url from production builds unless intentionally loading a remote, pinned HTTPS origin.',
+            references: [
+              'https://capacitorjs.com/docs/config',
+              'https://capacitorjs.com/docs/guides/security/'
+            ]
+          });
+        }
+      }
+
+      return findings;
+    },
+    remediation: 'Serve the app over HTTPS; avoid cleartext remote server.url in production.'
   }
 ];

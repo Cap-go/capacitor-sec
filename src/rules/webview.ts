@@ -168,7 +168,7 @@ export const webviewRules: Rule[] = [
             filePath,
             line: 1,
             remediation: 'Add a Content Security Policy meta tag to restrict resource loading.',
-            references: ['https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP']
+            references: ['https://developer.mozilla.org/en-US/docs/Web/HTTP/CSP', 'https://capacitorjs.com/docs/guides/security/']
           });
         } else if (hasUnsafeInline) {
           findings.push({
@@ -228,5 +228,107 @@ export const webviewRules: Rule[] = [
       return findings;
     },
     remediation: 'Add rel="noopener noreferrer" to external links.'
+  },
+{
+    id: 'WEB006',
+    name: 'Dynamic WebView Script or HTML Injection',
+    description: 'Detects evaluateJavaScript / loadHTMLString / loadData with dynamic or concatenated content',
+    severity: 'high',
+    category: 'webview',
+    filePatterns: ['**/*.ts', '**/*.tsx', '**/*.js', '**/*.jsx', '**/*.java', '**/*.kt', '**/*.swift', '**/*.m'],
+    check: (content: string, filePath: string): Finding[] => {
+      const findings: Finding[] = [];
+      const lines = content.split('\n');
+
+      const isLiteralArg = (arg: string): boolean => {
+        const trimmed = arg.trim();
+        return (
+          /^["'`]/.test(trimmed) &&
+          !/\$\{/.test(trimmed) &&
+          !/\+\s*[a-zA-Z_$]/.test(trimmed)
+        );
+      };
+
+      const patterns = [
+        {
+          // JS/TS/Swift-ish evaluateJavaScript(nonLiteral
+          pattern: /evaluateJavaScript\s*\(\s*([^)\n]+)/g,
+          message: 'evaluateJavaScript called with non-literal script — treat as untrusted input',
+          platforms: 'all' as const
+        },
+        {
+          // Android evaluateJavascript
+          pattern: /evaluateJavascript\s*\(\s*([^,\n]+)/g,
+          message: 'evaluateJavascript called with non-literal script — treat as untrusted input',
+          platforms: 'android' as const
+        },
+        {
+          // ObjC stringByEvaluatingJavaScriptFromString:
+          pattern: /stringByEvaluatingJavaScriptFromString\s*:\s*([^\]\n;]+)/g,
+          message: 'stringByEvaluatingJavaScriptFromString with dynamic script — injection risk',
+          platforms: 'objc' as const
+        },
+        {
+          pattern: /loadHTMLString\s*\(\s*([^,\n)]+)/g,
+          message: 'loadHTMLString with non-literal HTML — injection risk if content is not fully trusted',
+          platforms: 'all' as const
+        },
+        {
+          pattern: /loadData(?:WithBaseURL)?\s*\(\s*([^,\n)]+)/g,
+          message: 'loadData/loadDataWithBaseURL with non-literal content — injection risk',
+          platforms: 'all' as const
+        },
+        {
+          // Concatenation / template into evaluateJavaScript
+          pattern: /evaluateJavaScript(?:s)?\s*\(\s*[^)]*(?:\+|`[^`]*\$\{)/g,
+          message: 'Concatenated/template script passed to evaluateJavaScript — injection risk',
+          platforms: 'all' as const,
+          skipLiteralCheck: true
+        }
+      ];
+
+      const seen = new Set<string>();
+
+      for (const entry of patterns) {
+        const { pattern, message, skipLiteralCheck } = entry as {
+          pattern: RegExp;
+          message: string;
+          skipLiteralCheck?: boolean;
+        };
+        let match;
+        const regex = new RegExp(pattern.source, pattern.flags);
+        while ((match = regex.exec(content)) !== null) {
+          if (!skipLiteralCheck && match[1] && isLiteralArg(match[1])) {
+            continue;
+          }
+          const lineNum = content.substring(0, match.index).split('\n').length;
+          const key = `${lineNum}:${message.slice(0, 24)}`;
+          // Dedupe: one finding per line for this rule
+          const lineKey = `line:${lineNum}`;
+          if (seen.has(lineKey)) continue;
+          seen.add(lineKey);
+
+          findings.push({
+            ruleId: 'WEB006',
+            ruleName: 'Dynamic WebView Script or HTML Injection',
+            severity: 'high',
+            category: 'webview',
+            message,
+            filePath,
+            line: lineNum,
+            codeSnippet: lines[lineNum - 1]?.trim(),
+            remediation:
+              'Never pass attacker-controlled data into evaluateJavaScript or loadHTMLString. Validate URLs against an allowlist; prefer safe DOM APIs and strict CSP.',
+            references: [
+              'https://mas.owasp.org/MASTG/best-practices/MASTG-BEST-0034/',
+              'https://capacitorjs.com/docs/guides/security/'
+            ]
+          });
+        }
+      }
+
+      return findings;
+    },
+    remediation: 'Validate and escape all data before injecting into WebView HTML or JavaScript.'
   }
 ];
